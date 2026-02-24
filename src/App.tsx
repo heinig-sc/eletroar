@@ -21,7 +21,8 @@ import {
   Phone,
   User,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Edit
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SearchResult, Service, AccountPayable, Customer } from './types';
@@ -37,6 +38,9 @@ export default function App() {
   const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
   const [isNewServiceModalOpen, setIsNewServiceModalOpen] = useState(false);
   const [isNewPayableModalOpen, setIsNewPayableModalOpen] = useState(false);
+  const [viewingHistoryCustomer, setViewingHistoryCustomer] = useState<Customer | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [refreshCustomersKey, setRefreshCustomersKey] = useState(0);
 
   // Search logic
   useEffect(() => {
@@ -57,6 +61,19 @@ export default function App() {
     const res = await fetch(`/api/customers/${customerId}/history`);
     const data = await res.json();
     setHistory(data);
+  };
+
+  const toggleServiceStatus = async (id: number, customerId?: number) => {
+    try {
+      const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
+      if (res.ok) {
+        if (customerId) {
+          fetchHistory(customerId);
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling status:", error);
+    }
   };
 
   const handleSelectCustomer = (result: SearchResult) => {
@@ -207,7 +224,19 @@ export default function App() {
                             </div>
                             <div className="flex-1">
                               <div className="font-bold">{s.description}</div>
-                              <div className="text-sm text-black/50 mt-1">Status: {s.status}</div>
+                              <div className="text-sm text-black/50 mt-1">
+                                <button 
+                                  onClick={() => toggleServiceStatus(s.id, selectedCustomer.customer_id)}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
+                                    s.status === 'completed' 
+                                      ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
+                                      : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                                  }`}
+                                >
+                                  {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                                  {s.status === 'completed' ? 'Concluído' : 'Pendente'}
+                                </button>
+                              </div>
                             </div>
                             <div className="font-mono font-bold text-emerald-600">
                               R$ {s.total_price.toFixed(2)}
@@ -224,7 +253,14 @@ export default function App() {
 
           {activeTab === 'payable' && <PayableTab onOpenModal={() => setIsNewPayableModalOpen(true)} />}
           {activeTab === 'reports' && <ReportsTab />}
-          {activeTab === 'customers' && <CustomersTab onOpenModal={() => setIsNewCustomerModalOpen(true)} />}
+          {activeTab === 'customers' && (
+            <CustomersTab 
+              refreshTrigger={refreshCustomersKey}
+              onOpenModal={() => setIsNewCustomerModalOpen(true)} 
+              onViewHistory={(c) => setViewingHistoryCustomer(c)}
+              onEdit={(c) => setEditingCustomer(c)}
+            />
+          )}
           {activeTab === 'services' && <ServicesTab />}
         </AnimatePresence>
       </main>
@@ -247,6 +283,118 @@ export default function App() {
         onClose={() => setIsNewPayableModalOpen(false)}
         onSuccess={() => setActiveTab('payable')}
       />
+
+      <CustomerHistoryModal 
+        isOpen={!!viewingHistoryCustomer}
+        customer={viewingHistoryCustomer}
+        onClose={() => setViewingHistoryCustomer(null)}
+      />
+
+      <EditCustomerModal 
+        isOpen={!!editingCustomer}
+        customer={editingCustomer}
+        onClose={() => setEditingCustomer(null)}
+        onSuccess={() => {
+          setRefreshCustomersKey(prev => prev + 1);
+          setActiveTab('customers');
+        }}
+      />
+    </div>
+  );
+}
+
+function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, customer: Customer | null, onClose: () => void }) {
+  const [history, setHistory] = useState<Service[]>([]);
+
+  const fetchHistory = async () => {
+    if (!customer) return;
+    const res = await fetch(`/api/customers/${customer.id}/history`);
+    const data = await res.json();
+    setHistory(data);
+  };
+
+  const toggleStatus = async (id: number) => {
+    const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
+    if (res.ok) {
+      fetchHistory();
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && customer) {
+      fetchHistory();
+    }
+  }, [isOpen, customer]);
+
+  if (!isOpen || !customer) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
+      >
+        <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
+          <div>
+            <h3 className="text-xl font-bold">{customer.name}</h3>
+            <p className="text-emerald-100 text-sm">{customer.phone}</p>
+          </div>
+          <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors">
+            <Plus className="rotate-45" size={24} />
+          </button>
+        </div>
+        
+        <div className="p-8 max-h-[60vh] overflow-y-auto">
+          <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
+            <History size={16} /> Histórico de Serviços
+          </div>
+          
+          <div className="space-y-4">
+            {history.length === 0 ? (
+              <div className="text-center py-10 text-black/30 italic">
+                Nenhum serviço registrado para este cliente.
+              </div>
+            ) : (
+              history.map((s) => (
+                <div key={s.id} className="flex gap-6 p-4 rounded-xl border border-black/5 items-center">
+                  <div className="text-sm font-mono text-black/40">
+                    {new Date(s.service_date).toLocaleDateString('pt-BR')}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold">{s.description}</div>
+                    <div className="text-xs text-black/40">{s.plate} • {s.model}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono font-bold text-emerald-600 mb-1">
+                      R$ {s.total_price.toFixed(2)}
+                    </div>
+                    <button 
+                      onClick={() => toggleStatus(s.id)}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
+                        s.status === 'completed' 
+                          ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
+                          : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                      }`}
+                    >
+                      {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                      {s.status === 'completed' ? 'Concluído' : 'Pendente'}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="p-6 bg-black/[0.02] border-t border-black/5 flex justify-end">
+          <button 
+            onClick={onClose}
+            className="bg-black text-white px-6 py-2 rounded-xl font-bold hover:bg-black/80 transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -742,7 +890,7 @@ function ReportsTab() {
   );
 }
 
-function CustomersTab({ onOpenModal }: { onOpenModal: () => void }) {
+function CustomersTab({ onOpenModal, onViewHistory, onEdit, refreshTrigger }: { onOpenModal: () => void, onViewHistory: (c: Customer) => void, onEdit: (c: Customer) => void, refreshTrigger?: number }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -758,6 +906,10 @@ function CustomersTab({ onOpenModal }: { onOpenModal: () => void }) {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [refreshTrigger]);
 
   return (
     <motion.div 
@@ -795,6 +947,7 @@ function CustomersTab({ onOpenModal }: { onOpenModal: () => void }) {
                 <th className="px-6 py-4 text-xs font-bold text-black/40 uppercase">Telefone</th>
                 <th className="px-6 py-4 text-xs font-bold text-black/40 uppercase">E-mail</th>
                 <th className="px-6 py-4 text-xs font-bold text-black/40 uppercase text-center">Veículos</th>
+                <th className="px-6 py-4 text-xs font-bold text-black/40 uppercase text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
@@ -807,6 +960,22 @@ function CustomersTab({ onOpenModal }: { onOpenModal: () => void }) {
                     <span className="bg-emerald-50 text-emerald-600 px-2 py-1 rounded-full text-xs font-bold">
                       {c.vehicle_count}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex justify-end gap-3">
+                      <button 
+                        onClick={() => onEdit(c)}
+                        className="text-black/40 hover:text-black font-bold text-sm flex items-center gap-1"
+                      >
+                        <Edit size={14} /> Editar
+                      </button>
+                      <button 
+                        onClick={() => onViewHistory(c)}
+                        className="text-emerald-600 hover:text-emerald-700 font-bold text-sm flex items-center gap-1"
+                      >
+                        <History size={14} /> Histórico
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1115,5 +1284,102 @@ function ServicesTab() {
         </div>
       )}
     </motion.div>
+  );
+}
+
+function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onSuccess: () => void }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: ''
+  });
+
+  useEffect(() => {
+    if (customer) {
+      setFormData({
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email || ''
+      });
+    }
+  }, [customer]);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!customer) return;
+    const res = await fetch(`/api/customers/${customer.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData)
+    });
+    if (res.ok) {
+      onSuccess();
+      onClose();
+    }
+  };
+
+  if (!isOpen || !customer) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
+      >
+        <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
+          <h3 className="text-xl font-bold">Editar Cliente</h3>
+          <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors">
+            <Plus className="rotate-45" size={24} />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <div>
+            <label className="block text-sm font-medium mb-1">Nome Completo</label>
+            <input 
+              required
+              className="w-full border border-black/10 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              value={formData.name}
+              onChange={e => setFormData({...formData, name: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Telefone</label>
+            <input 
+              required
+              className="w-full border border-black/10 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              value={formData.phone}
+              onChange={e => setFormData({...formData, phone: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">E-mail</label>
+            <input 
+              type="email"
+              className="w-full border border-black/10 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              value={formData.email}
+              onChange={e => setFormData({...formData, email: e.target.value})}
+            />
+          </div>
+
+          <div className="flex justify-end gap-4 mt-6">
+            <button 
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2 text-black/50 font-bold hover:text-black transition-colors"
+            >
+              Cancelar
+            </button>
+            <button 
+              type="submit"
+              className="bg-emerald-600 text-white px-8 py-2 rounded-xl font-bold hover:bg-emerald-700 transition-colors"
+            >
+              Salvar Alterações
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
   );
 }

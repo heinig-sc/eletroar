@@ -170,6 +170,13 @@ async function startServer() {
     res.json({ id: customerId });
   });
 
+  app.put("/api/customers/:id", (req, res) => {
+    const { id } = req.params;
+    const { name, phone, email } = req.body;
+    db.prepare("UPDATE customers SET name = ?, phone = ?, email = ? WHERE id = ?").run(name, phone, email, id);
+    res.json({ success: true });
+  });
+
   // CRUD for Services
   app.post("/api/services", (req, res) => {
     const { vehicle_id, description, total_price, parts } = req.body;
