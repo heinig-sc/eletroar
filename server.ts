@@ -3,8 +3,6 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
-import bcrypt from "bcryptjs";
-import session from "express-session";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,12 +60,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL
-  );
-
   INSERT INTO customers (name, phone, email) SELECT 'João Silva', '11988887777', 'joao@email.com' WHERE NOT EXISTS (SELECT 1 FROM customers);
   INSERT INTO vehicles (customer_id, plate, brand, model, year, color) SELECT 1, 'ABC-1234', 'Toyota', 'Corolla', 2022, 'Prata' WHERE NOT EXISTS (SELECT 1 FROM vehicles);
   INSERT INTO services (vehicle_id, description, total_price, status) SELECT 1, 'Carga de Gás e Troca de Filtro', 350.00, 'completed' WHERE NOT EXISTS (SELECT 1 FROM services);
@@ -79,79 +71,12 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.set('trust proxy', 1); // Trust the proxy for secure cookies
   app.use(express.json());
-  app.use(session({
-    secret: 'workshop-secret-key',
-    resave: true,
-    saveUninitialized: true,
-    proxy: true, // Explicitly trust proxy for cookies
-    cookie: {
-      secure: true, // Required for SameSite=None
-      sameSite: 'none', // Required for cross-origin iframe
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    }
-  }));
-
-  // Seed default user with proper hash
-  const adminUser = db.prepare("SELECT * FROM users WHERE username = 'admin'").get();
-  if (!adminUser || adminUser.password.includes('X.X.X')) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    if (adminUser) {
-      db.prepare("UPDATE users SET password = ? WHERE username = 'admin'").run(hash);
-    } else {
-      db.prepare("INSERT INTO users (username, password) VALUES (?, ?)").run('admin', hash);
-    }
-  }
-
-  // Auth Routes
-  app.post("/api/login", (req, res) => {
-    const { username, password } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-    
-    if (user && bcrypt.compareSync(password, user.password)) {
-      (req.session as any).userId = user.id;
-      (req.session as any).username = user.username;
-      res.json({ success: true, user: { id: user.id, username: user.username } });
-    } else {
-      res.status(401).json({ error: "Credenciais inválidas" });
-    }
-  });
-
-  app.post("/api/logout", (req, res) => {
-    req.session.destroy(() => {
-      res.json({ success: true });
-    });
-  });
-
-  app.get("/api/me", (req, res) => {
-    if ((req.session as any).userId) {
-      res.json({ 
-        authenticated: true, 
-        user: { 
-          id: (req.session as any).userId, 
-          username: (req.session as any).username 
-        } 
-      });
-    } else {
-      res.json({ authenticated: false });
-    }
-  });
-
-  // Auth Middleware
-  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if ((req.session as any).userId) {
-      next();
-    } else {
-      res.status(401).json({ error: "Não autorizado" });
-    }
-  };
 
   // API Routes
   
   // Search Customers/Vehicles
-  app.get("/api/search", requireAuth, (req, res) => {
+  app.get("/api/search", (req, res) => {
     const { q } = req.query;
     const query = `%${q}%`;
     
@@ -168,7 +93,7 @@ async function startServer() {
   });
 
   // List all customers
-  app.get("/api/customers", requireAuth, (req, res) => {
+  app.get("/api/customers", (req, res) => {
     const customers = db.prepare(`
       SELECT c.*, COUNT(v.id) as vehicle_count
       FROM customers c
@@ -180,7 +105,7 @@ async function startServer() {
   });
 
   // List all services (OS)
-  app.get("/api/services", requireAuth, (req, res) => {
+  app.get("/api/services", (req, res) => {
     const { start, end } = req.query;
     let query = `
       SELECT s.*, c.name as customer_name, v.plate, v.model
@@ -206,7 +131,7 @@ async function startServer() {
     res.json(services);
   });
 
-  app.patch("/api/services/:id/toggle-status", requireAuth, (req, res) => {
+  app.patch("/api/services/:id/toggle-status", (req, res) => {
     const { id } = req.params;
     const service = db.prepare("SELECT status FROM services WHERE id = ?").get(id);
     if (service) {
@@ -219,7 +144,7 @@ async function startServer() {
   });
 
   // Get Customer History
-  app.get("/api/customers/:id/history", requireAuth, (req, res) => {
+  app.get("/api/customers/:id/history", (req, res) => {
     const history = db.prepare(`
       SELECT s.*, v.plate, v.model
       FROM services s
@@ -231,7 +156,7 @@ async function startServer() {
   });
 
   // CRUD for Customers
-  app.post("/api/customers", requireAuth, (req, res) => {
+  app.post("/api/customers", (req, res) => {
     const { name, phone, email, vehicle } = req.body;
     const insertCustomer = db.prepare("INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)");
     const result = insertCustomer.run(name, phone, email);
@@ -245,33 +170,33 @@ async function startServer() {
     res.json({ id: customerId });
   });
 
-  app.put("/api/customers/:id", requireAuth, (req, res) => {
+  app.put("/api/customers/:id", (req, res) => {
     const { id } = req.params;
     const { name, phone, email } = req.body;
     db.prepare("UPDATE customers SET name = ?, phone = ?, email = ? WHERE id = ?").run(name, phone, email, id);
     res.json({ success: true });
   });
 
-  app.delete("/api/customers/:id", requireAuth, (req, res) => {
+  app.delete("/api/customers/:id", (req, res) => {
     const { id } = req.params;
     db.prepare("DELETE FROM customers WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
   // Vehicles CRUD
-  app.get("/api/customers/:id/vehicles", requireAuth, (req, res) => {
+  app.get("/api/customers/:id/vehicles", (req, res) => {
     const vehicles = db.prepare("SELECT * FROM vehicles WHERE customer_id = ?").all(req.params.id);
     res.json(vehicles);
   });
 
-  app.post("/api/vehicles", requireAuth, (req, res) => {
+  app.post("/api/vehicles", (req, res) => {
     const { customer_id, plate, brand, model, year, color } = req.body;
     const result = db.prepare("INSERT INTO vehicles (customer_id, plate, brand, model, year, color) VALUES (?, ?, ?, ?, ?, ?)")
       .run(customer_id, plate, brand, model, year, color);
     res.json({ id: result.lastInsertRowid });
   });
 
-  app.put("/api/vehicles/:id", requireAuth, (req, res) => {
+  app.put("/api/vehicles/:id", (req, res) => {
     const { id } = req.params;
     const { plate, brand, model, year, color } = req.body;
     db.prepare("UPDATE vehicles SET plate = ?, brand = ?, model = ?, year = ?, color = ? WHERE id = ?")
@@ -279,14 +204,14 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.delete("/api/vehicles/:id", requireAuth, (req, res) => {
+  app.delete("/api/vehicles/:id", (req, res) => {
     const { id } = req.params;
     db.prepare("DELETE FROM vehicles WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
   // CRUD for Services
-  app.post("/api/services", requireAuth, (req, res) => {
+  app.post("/api/services", (req, res) => {
     const { vehicle_id, description, total_price, parts } = req.body;
     const insertService = db.prepare("INSERT INTO services (vehicle_id, description, total_price) VALUES (?, ?, ?)");
     const result = insertService.run(vehicle_id, description, total_price);
@@ -302,7 +227,7 @@ async function startServer() {
     res.json({ id: serviceId });
   });
 
-  app.get("/api/services/:id", requireAuth, (req, res) => {
+  app.get("/api/services/:id", (req, res) => {
     const { id } = req.params;
     const service = db.prepare(`
       SELECT s.*, v.plate, v.model, c.name as customer_name
@@ -320,7 +245,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/services/:id", requireAuth, (req, res) => {
+  app.put("/api/services/:id", (req, res) => {
     const { id } = req.params;
     const { description, total_price, parts } = req.body;
     
@@ -338,14 +263,14 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.delete("/api/services/:id", requireAuth, (req, res) => {
+  app.delete("/api/services/:id", (req, res) => {
     const { id } = req.params;
     db.prepare("DELETE FROM services WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
   // Accounts Payable
-  app.get("/api/accounts-payable", requireAuth, (req, res) => {
+  app.get("/api/accounts-payable", (req, res) => {
     const { start, end, supplier } = req.query;
     let query = "SELECT * FROM accounts_payable WHERE 1=1";
     const params = [];
@@ -367,20 +292,20 @@ async function startServer() {
     res.json(results);
   });
 
-  app.patch("/api/accounts-payable/:id/toggle-paid", requireAuth, (req, res) => {
+  app.patch("/api/accounts-payable/:id/toggle-paid", (req, res) => {
     const { id } = req.params;
     db.prepare("UPDATE accounts_payable SET paid = NOT paid WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
-  app.post("/api/accounts-payable", requireAuth, (req, res) => {
+  app.post("/api/accounts-payable", (req, res) => {
     const { supplier, description, amount, due_date } = req.body;
     const insert = db.prepare("INSERT INTO accounts_payable (supplier, description, amount, due_date) VALUES (?, ?, ?, ?)");
     const result = insert.run(supplier, description, amount, due_date);
     res.json({ id: result.lastInsertRowid });
   });
 
-  app.put("/api/accounts-payable/:id", requireAuth, (req, res) => {
+  app.put("/api/accounts-payable/:id", (req, res) => {
     const { id } = req.params;
     const { supplier, description, amount, due_date, paid } = req.body;
     db.prepare("UPDATE accounts_payable SET supplier = ?, description = ?, amount = ?, due_date = ?, paid = ? WHERE id = ?")
@@ -388,14 +313,14 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.delete("/api/accounts-payable/:id", requireAuth, (req, res) => {
+  app.delete("/api/accounts-payable/:id", (req, res) => {
     const { id } = req.params;
     db.prepare("DELETE FROM accounts_payable WHERE id = ?").run(id);
     res.json({ success: true });
   });
 
   // Reports
-  app.get("/api/reports/services", requireAuth, (req, res) => {
+  app.get("/api/reports/services", (req, res) => {
     const { start, end } = req.query;
     const results = db.prepare(`
       SELECT s.*, c.name as customer_name, v.plate

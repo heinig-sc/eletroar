@@ -33,8 +33,6 @@ import { SearchResult, Service, AccountPayable, Customer, Vehicle } from './type
 type Tab = 'search' | 'customers' | 'services' | 'payable' | 'reports';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [user, setUser] = useState<{ username: string } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -51,80 +49,12 @@ export default function App() {
   const [refreshPayablesKey, setRefreshPayablesKey] = useState(0);
   const [refreshServicesKey, setRefreshServicesKey] = useState(0);
 
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [loginError, setLoginError] = useState('');
-  const [sessionExpired, setSessionExpired] = useState(false);
-
-  const onAuthError = () => {
-    setIsAuthenticated(false);
-    setUser(null);
-    setSessionExpired(true);
-  };
-
-  // Auth check
-  useEffect(() => {
-    fetch('/api/me')
-      .then(res => res.json())
-      .then(data => {
-        if (data.authenticated) {
-          setIsAuthenticated(true);
-          setUser(data.user);
-        } else {
-          setIsAuthenticated(false);
-        }
-        setIsInitialLoading(false);
-      })
-      .catch(() => {
-        setIsAuthenticated(false);
-        setIsInitialLoading(false);
-      });
-  }, []);
-
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setSessionExpired(false);
-    const formData = new FormData(e.target as HTMLFormElement);
-    const username = formData.get('username');
-    const password = formData.get('password');
-
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setIsAuthenticated(true);
-        setUser(data.user);
-      } else {
-        setLoginError(data.error || 'Usuário ou senha incorretos');
-      }
-    } catch (error) {
-      setLoginError('Erro de conexão com o servidor');
-    }
-  };
-
-  const handleLogout = async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    setIsAuthenticated(false);
-    setUser(null);
-  };
-
   // Search logic
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (searchQuery.length > 1) {
         fetch(`/api/search?q=${searchQuery}`)
-          .then(res => {
-            if (res.status === 401) {
-              setIsAuthenticated(false);
-              setUser(null);
-              return;
-            }
-            return res.json();
-          })
+          .then(res => res.json())
           .then(data => {
             if (Array.isArray(data)) {
               setSearchResults(data);
@@ -144,11 +74,6 @@ export default function App() {
   const fetchHistory = async (customerId: number) => {
     try {
       const res = await fetch(`/api/customers/${customerId}/history`);
-      if (res.status === 401) {
-        setIsAuthenticated(false);
-        setUser(null);
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setHistory(data);
@@ -164,11 +89,6 @@ export default function App() {
   const toggleServiceStatus = async (id: number, customerId?: number) => {
     try {
       const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
-      if (res.status === 401) {
-        setIsAuthenticated(false);
-        setUser(null);
-        return;
-      }
       if (res.ok) {
         if (customerId) {
           fetchHistory(customerId);
@@ -188,11 +108,6 @@ export default function App() {
     if (confirm('Tem certeza que deseja excluir este cliente? Todos os veículos e serviços vinculados também serão excluídos.')) {
       try {
         const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
-        if (res.status === 401) {
-          setIsAuthenticated(false);
-          setUser(null);
-          return;
-        }
         if (res.ok) {
           setRefreshCustomersKey(prev => prev + 1);
           if (selectedCustomer?.customer_id === id) {
@@ -205,85 +120,6 @@ export default function App() {
       }
     }
   };
-
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full"
-        />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-8 rounded-3xl shadow-xl shadow-black/5 w-full max-w-md border border-black/5"
-        >
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-emerald-600/20">
-              <Lock size={32} />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">EletroAr Workshop</h1>
-            <p className="text-black/50 text-sm">Acesse sua conta para gerenciar a oficina</p>
-          </div>
-
-          {sessionExpired && (
-            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm flex items-center gap-3">
-              <AlertCircle size={18} />
-              Sua sessão expirou. Por favor, entre novamente.
-            </div>
-          )}
-
-          {loginError && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-3">
-              <AlertCircle size={18} />
-              {loginError}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-black/40 uppercase mb-2">Usuário</label>
-              <input 
-                name="username"
-                type="text" 
-                required
-                className="w-full bg-[#F9F9F9] border border-black/5 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                placeholder="Seu usuário"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-black/40 uppercase mb-2">Senha</label>
-              <input 
-                name="password"
-                type="password" 
-                required
-                className="w-full bg-[#F9F9F9] border border-black/5 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                placeholder="Sua senha"
-              />
-            </div>
-            <button 
-              type="submit"
-              className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-[0.98]"
-            >
-              Entrar no Sistema
-            </button>
-          </form>
-          
-          <div className="mt-8 pt-6 border-t border-black/5 text-center">
-            <p className="text-xs text-black/30">© 2026 EletroAr Management System</p>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A] font-sans pb-20 md:pb-0">
@@ -335,16 +171,6 @@ export default function App() {
             icon={<FileText size={20} />}
             label="Relatórios"
           />
-          
-          <div className="md:mt-auto md:pt-4 md:border-t md:border-black/5">
-            <NavButton 
-              active={false}
-              onClick={handleLogout}
-              icon={<LogOut size={20} />}
-              label="Sair"
-              className="text-red-500 hover:bg-red-50"
-            />
-          </div>
         </div>
       </nav>
 
@@ -474,10 +300,9 @@ export default function App() {
               onOpenModal={() => setIsNewPayableModalOpen(true)} 
               onEdit={(p) => setEditingPayable(p)}
               refreshTrigger={refreshPayablesKey}
-              onAuthError={onAuthError}
             />
           )}
-          {activeTab === 'reports' && <ReportsTab onAuthError={onAuthError} />}
+          {activeTab === 'reports' && <ReportsTab />}
           {activeTab === 'customers' && (
             <CustomersTab 
               refreshTrigger={refreshCustomersKey}
@@ -485,14 +310,12 @@ export default function App() {
               onViewHistory={(c) => setViewingHistoryCustomer(c)}
               onEdit={(c) => setEditingCustomer(c)}
               onDelete={handleDeleteCustomer}
-              onAuthError={onAuthError}
             />
           )}
           {activeTab === 'services' && (
             <ServicesTab 
               onEdit={(id) => setEditingServiceId(id)}
               refreshTrigger={refreshServicesKey}
-              onAuthError={onAuthError}
             />
           )}
         </div>
@@ -502,7 +325,6 @@ export default function App() {
         isOpen={isNewCustomerModalOpen} 
         onClose={() => setIsNewCustomerModalOpen(false)}
         onSuccess={() => setActiveTab('search')}
-        onAuthError={onAuthError}
       />
 
       <NewServiceModal 
@@ -513,14 +335,12 @@ export default function App() {
           if (selectedCustomer) fetchHistory(selectedCustomer.customer_id);
           setRefreshServicesKey(prev => prev + 1);
         }}
-        onAuthError={onAuthError}
       />
 
       <NewPayableModal 
         isOpen={isNewPayableModalOpen} 
         onClose={() => setIsNewPayableModalOpen(false)}
         onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
-        onAuthError={onAuthError}
       />
 
       <EditPayableModal 
@@ -528,7 +348,6 @@ export default function App() {
         payable={editingPayable}
         onClose={() => setEditingPayable(null)}
         onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
-        onAuthError={onAuthError}
       />
 
       <EditServiceModal 
@@ -536,14 +355,12 @@ export default function App() {
         serviceId={editingServiceId}
         onClose={() => setEditingServiceId(null)}
         onSuccess={() => setRefreshServicesKey(prev => prev + 1)}
-        onAuthError={onAuthError}
       />
 
       <CustomerHistoryModal 
         isOpen={!!viewingHistoryCustomer}
         customer={viewingHistoryCustomer}
         onClose={() => setViewingHistoryCustomer(null)}
-        onAuthError={onAuthError}
       />
 
       <EditCustomerModal 
@@ -554,23 +371,18 @@ export default function App() {
           setRefreshCustomersKey(prev => prev + 1);
           setActiveTab('customers');
         }}
-        onAuthError={onAuthError}
       />
     </div>
   );
 }
 
-function CustomerHistoryModal({ isOpen, customer, onClose, onAuthError }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onAuthError: () => void }) {
+function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, customer: Customer | null, onClose: () => void }) {
   const [history, setHistory] = useState<Service[]>([]);
 
   const fetchHistory = async () => {
     if (!customer) return;
     try {
       const res = await fetch(`/api/customers/${customer.id}/history`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setHistory(data);
@@ -669,7 +481,7 @@ function CustomerHistoryModal({ isOpen, customer, onClose, onAuthError }: { isOp
   );
 }
 
-function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess, onAuthError }: { isOpen: boolean, vehicleId: number, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess }: { isOpen: boolean, vehicleId: number, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     vehicle_id: vehicleId,
     description: '',
@@ -689,10 +501,6 @@ function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess, onAuthError }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       if (res.ok) {
         onSuccess();
         onClose();
@@ -765,7 +573,7 @@ function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess, onAuthError }:
   );
 }
 
-function NewPayableModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen: boolean, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function NewPayableModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     supplier: '',
     description: '',
@@ -781,10 +589,6 @@ function NewPayableModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       if (res.ok) {
         onSuccess();
         onClose();
@@ -876,7 +680,7 @@ function NewPayableModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen: 
   );
 }
 
-function EditPayableModal({ isOpen, payable, onClose, onSuccess, onAuthError }: { isOpen: boolean, payable: AccountPayable | null, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boolean, payable: AccountPayable | null, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     supplier: '',
     description: '',
@@ -906,10 +710,6 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess, onAuthError }: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       if (res.ok) {
         onSuccess();
         onClose();
@@ -924,10 +724,6 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess, onAuthError }: 
     if (confirm('Tem certeza que deseja excluir esta conta?')) {
       try {
         const res = await fetch(`/api/accounts-payable/${payable.id}`, { method: 'DELETE' });
-        if (res.status === 401) {
-          onAuthError();
-          return;
-        }
         if (res.ok) {
           onSuccess();
           onClose();
@@ -1039,7 +835,7 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess, onAuthError }: 
   );
 }
 
-function EditServiceModal({ isOpen, serviceId, onClose, onSuccess, onAuthError }: { isOpen: boolean, serviceId: number | null, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: boolean, serviceId: number | null, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     description: '',
     total_price: 0,
@@ -1057,10 +853,6 @@ function EditServiceModal({ isOpen, serviceId, onClose, onSuccess, onAuthError }
     setIsLoading(true);
     try {
       const res = await fetch(`/api/services/${serviceId}`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       setFormData({
         description: data.description,
@@ -1189,7 +981,7 @@ function NavButton({ active, onClick, icon, label, className = "" }: { active: b
   );
 }
 
-function PayableTab({ onOpenModal, onEdit, refreshTrigger, onAuthError }: { onOpenModal: () => void, onEdit: (p: AccountPayable) => void, refreshTrigger?: number, onAuthError: () => void }) {
+function PayableTab({ onOpenModal, onEdit, refreshTrigger }: { onOpenModal: () => void, onEdit: (p: AccountPayable) => void, refreshTrigger?: number }) {
   const [payables, setPayables] = useState<AccountPayable[]>([]);
   const [filter, setFilter] = useState({ start: '', end: '', supplier: '' });
 
@@ -1197,10 +989,6 @@ function PayableTab({ onOpenModal, onEdit, refreshTrigger, onAuthError }: { onOp
     try {
       const params = new URLSearchParams(filter);
       const res = await fetch(`/api/accounts-payable?${params}`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setPayables(data);
@@ -1336,17 +1124,13 @@ function PayableTab({ onOpenModal, onEdit, refreshTrigger, onAuthError }: { onOp
   );
 }
 
-function ReportsTab({ onAuthError }: { onAuthError: () => void }) {
+function ReportsTab() {
   const [reportData, setReportData] = useState<Service[]>([]);
   const [range, setRange] = useState({ start: '', end: '' });
 
   const fetchReport = async () => {
     try {
       const res = await fetch(`/api/reports/services?start=${range.start}&end=${range.end}`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setReportData(data);
@@ -1450,13 +1234,7 @@ function ReportsTab({ onAuthError }: { onAuthError: () => void }) {
                 const today = new Date().toISOString().split('T')[0];
                 setRange({ start: today, end: today });
                 fetch(`/api/reports/services?start=${today}&end=${today}`)
-                  .then(res => {
-                    if (res.status === 401) {
-                      onAuthError();
-                      return;
-                    }
-                    return res.json();
-                  })
+                  .then(res => res.json())
                   .then(data => {
                     if (Array.isArray(data)) {
                       setReportData(data);
@@ -1527,7 +1305,7 @@ function ReportsTab({ onAuthError }: { onAuthError: () => void }) {
   );
 }
 
-function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTrigger, onAuthError }: { onOpenModal: () => void, onViewHistory: (c: Customer) => void, onEdit: (c: Customer) => void, onDelete: (id: number) => void, refreshTrigger?: number, onAuthError: () => void }) {
+function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTrigger }: { onOpenModal: () => void, onViewHistory: (c: Customer) => void, onEdit: (c: Customer) => void, onDelete: (id: number) => void, refreshTrigger?: number }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -1535,10 +1313,6 @@ function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTri
     setIsLoading(true);
     try {
       const res = await fetch('/api/customers');
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setCustomers(data);
@@ -1645,7 +1419,7 @@ function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTri
   );
 }
 
-function NewCustomerModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen: boolean, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -1667,10 +1441,6 @@ function NewCustomerModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       if (res.ok) {
         onSuccess();
         onClose();
@@ -1805,7 +1575,7 @@ function NewCustomerModal({ isOpen, onClose, onSuccess, onAuthError }: { isOpen:
   );
 }
 
-function ServicesTab({ onEdit, refreshTrigger, onAuthError }: { onEdit: (id: number) => void, refreshTrigger?: number, onAuthError: () => void }) {
+function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void, refreshTrigger?: number }) {
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState({ start: '', end: '' });
@@ -1815,10 +1585,6 @@ function ServicesTab({ onEdit, refreshTrigger, onAuthError }: { onEdit: (id: num
     try {
       const params = new URLSearchParams(filter);
       const res = await fetch(`/api/services?${params}`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setServices(data);
@@ -1965,7 +1731,7 @@ function ServicesTab({ onEdit, refreshTrigger, onAuthError }: { onEdit: (id: num
   );
 }
 
-function EditCustomerModal({ isOpen, customer, onClose, onSuccess, onAuthError }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onSuccess: () => void, onAuthError: () => void }) {
+function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -1986,10 +1752,6 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess, onAuthError }
     if (!customer) return;
     try {
       const res = await fetch(`/api/customers/${customer.id}/vehicles`);
-      if (res.status === 401) {
-        onAuthError();
-        return;
-      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setVehicles(data);
