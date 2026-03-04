@@ -23,9 +23,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Edit,
-  Trash2,
-  LogOut,
-  Lock
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SearchResult, Service, AccountPayable, Customer, Vehicle } from './types';
@@ -48,12 +46,29 @@ export default function App() {
   const [refreshCustomersKey, setRefreshCustomersKey] = useState(0);
   const [refreshPayablesKey, setRefreshPayablesKey] = useState(0);
   const [refreshServicesKey, setRefreshServicesKey] = useState(0);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const apiFetch = async (url: string, options: RequestInit = {}) => {
+    return fetch(url, {
+      ...options,
+    });
+  };
 
   // Search logic
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (searchQuery.length > 1) {
-        fetch(`/api/search?q=${searchQuery}`)
+        apiFetch(`/api/search?q=${searchQuery}`)
           .then(res => res.json())
           .then(data => {
             if (Array.isArray(data)) {
@@ -73,7 +88,7 @@ export default function App() {
 
   const fetchHistory = async (customerId: number) => {
     try {
-      const res = await fetch(`/api/customers/${customerId}/history`);
+      const res = await apiFetch(`/api/customers/${customerId}/history`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setHistory(data);
@@ -88,7 +103,7 @@ export default function App() {
 
   const toggleServiceStatus = async (id: number, customerId?: number) => {
     try {
-      const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
       if (res.ok) {
         if (customerId) {
           fetchHistory(customerId);
@@ -105,284 +120,414 @@ export default function App() {
   };
 
   const handleDeleteCustomer = async (id: number) => {
-    if (confirm('Tem certeza que deseja excluir este cliente? Todos os veículos e serviços vinculados também serão excluídos.')) {
-      try {
-        const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          setRefreshCustomersKey(prev => prev + 1);
-          if (selectedCustomer?.customer_id === id) {
-            setSelectedCustomer(null);
-            setHistory([]);
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Cliente',
+      message: 'Tem certeza que deseja excluir este cliente? Todos os veículos e serviços vinculados também serão excluídos.',
+      onConfirm: async () => {
+        try {
+          const res = await apiFetch(`/api/customers/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            setRefreshCustomersKey(prev => prev + 1);
+            if (selectedCustomer?.customer_id === id) {
+              setSelectedCustomer(null);
+              setHistory([]);
+            }
           }
+        } catch (error) {
+          console.error("Error deleting customer:", error);
         }
-      } catch (error) {
-        console.error("Error deleting customer:", error);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
       }
-    }
+    });
   };
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A] font-sans pb-20 md:pb-0">
-      {/* Top Bar for Mobile */}
-      <header className="md:hidden bg-white border-b border-black/5 p-4 sticky top-0 z-50 flex items-center gap-3">
-        <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white">
-          <Wrench size={18} />
-        </div>
-        <h1 className="font-bold text-lg tracking-tight">EletroAr</h1>
-      </header>
+      <AnimatePresence>
+      </AnimatePresence>
 
-      {/* Sidebar / Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-black/5 p-2 flex flex-row justify-around items-center z-50 md:fixed md:left-0 md:top-0 md:h-full md:w-64 md:border-r md:border-t-0 md:p-6 md:flex-col md:gap-8 md:justify-start">
-        <div className="hidden md:flex items-center gap-3 px-2">
-          <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white">
-            <Wrench size={24} />
+      <>
+        {/* Top Bar for Mobile */}
+        <header className="md:hidden bg-white border-b border-black/5 p-4 sticky top-0 z-50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white">
+              <Wrench size={18} />
+            </div>
+            <h1 className="font-bold text-lg tracking-tight">EletroAr</h1>
           </div>
-          <h1 className="font-bold text-xl tracking-tight">EletroAr</h1>
-        </div>
+        </header>
 
-        <div className="flex flex-row w-full justify-around md:flex-col md:gap-2">
-          <NavButton 
-            active={activeTab === 'search'} 
-            onClick={() => setActiveTab('search')}
-            icon={<Search size={20} />}
-            label="Buscar"
-          />
-          <NavButton 
-            active={activeTab === 'customers'} 
-            onClick={() => setActiveTab('customers')}
-            icon={<User size={20} />}
-            label="Clientes"
-          />
-          <NavButton 
-            active={activeTab === 'services'} 
-            onClick={() => setActiveTab('services')}
-            icon={<Wrench size={20} />}
-            label="Serviços"
-          />
-          <NavButton 
-            active={activeTab === 'payable'} 
-            onClick={() => setActiveTab('payable')}
-            icon={<CreditCard size={20} />}
-            label="Contas"
-          />
-          <NavButton 
-            active={activeTab === 'reports'} 
-            onClick={() => setActiveTab('reports')}
-            icon={<FileText size={20} />}
-            label="Relatórios"
-          />
-        </div>
-      </nav>
+        {/* Sidebar / Bottom Nav */}
+        <nav className="fixed bottom-0 left-0 w-full bg-white border-t border-black/5 p-2 flex flex-row justify-around items-center z-50 md:fixed md:left-0 md:top-0 md:h-full md:w-64 md:border-r md:border-t-0 md:p-6 md:flex-col md:gap-8 md:justify-start">
+          <div className="hidden md:flex items-center gap-3 px-2">
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white">
+              <Wrench size={24} />
+            </div>
+            <h1 className="font-bold text-xl tracking-tight">EletroAr</h1>
+          </div>
 
-      {/* Main Content */}
-      <main className="md:ml-64 p-4 md:p-10">
-        <div className="max-w-7xl mx-auto">
-          {activeTab === 'search' && (
-            <div className="max-w-4xl mx-auto">
-              <header className="mb-6 md:mb-10">
-                <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-1 md:mb-2">Busca Inteligente</h2>
-                <p className="text-sm md:text-base text-black/50">Localize clientes por nome, placa, telefone ou modelo.</p>
-              </header>
+          <div className="flex flex-row w-full justify-around md:flex-col md:gap-2">
+            <NavButton 
+              active={activeTab === 'search'} 
+              onClick={() => setActiveTab('search')}
+              icon={<Search size={20} />}
+              label="Buscar"
+            />
+            <NavButton 
+              active={activeTab === 'customers'} 
+              onClick={() => setActiveTab('customers')}
+              icon={<User size={20} />}
+              label="Clientes"
+            />
+            <NavButton 
+              active={activeTab === 'services'} 
+              onClick={() => setActiveTab('services')}
+              icon={<Wrench size={20} />}
+              label="Serviços"
+            />
+            <NavButton 
+              active={activeTab === 'payable'} 
+              onClick={() => setActiveTab('payable')}
+              icon={<CreditCard size={20} />}
+              label="Contas"
+            />
+            <NavButton 
+              active={activeTab === 'reports'} 
+              onClick={() => setActiveTab('reports')}
+              icon={<FileText size={20} />}
+              label="Relatórios"
+            />
+          </div>
+        </nav>
 
-              <div className="relative mb-6 md:mb-8">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-black/30" size={20} />
-                <input 
-                  type="text"
-                  placeholder="Ex: ABC-1234, João Silva..."
-                  className="w-full bg-white border border-black/5 rounded-2xl py-4 md:py-5 pl-12 md:pl-14 pr-4 md:pr-6 text-base md:text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
+        {/* Main Content */}
+        <main className="md:ml-64 p-4 md:p-10">
+          <div className="max-w-7xl mx-auto">
+            {activeTab === 'search' && (
+              <div className="max-w-4xl mx-auto">
+                <header className="mb-6 md:mb-10">
+                  <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-1 md:mb-2">Busca Inteligente</h2>
+                  <p className="text-sm md:text-base text-black/50">Localize clientes por nome, placa, telefone ou modelo.</p>
+                </header>
 
-              <div className="grid gap-4">
-                {searchResults.map((result) => (
-                  <button
-                    key={`${result.customer_id}-${result.vehicle_id}`}
-                    onClick={() => handleSelectCustomer(result)}
-                    className="w-full bg-white p-4 md:p-6 rounded-2xl border border-black/5 hover:border-emerald-500/50 transition-all flex items-center justify-between group text-left"
-                  >
-                    <div className="flex flex-col sm:flex-row gap-4 md:gap-6 sm:items-center">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-                          <Car size={20} />
-                        </div>
-                        <div>
-                          <div className="font-bold text-base md:text-lg">{result.plate}</div>
-                          <div className="text-black/50 text-xs md:text-sm">{result.brand} {result.model}</div>
-                        </div>
-                      </div>
-                      <div className="hidden sm:block h-10 w-px bg-black/5" />
-                      <div>
-                        <div className="font-medium text-sm md:text-base">{result.name}</div>
-                        <div className="text-black/50 text-xs md:text-sm">{result.phone}</div>
-                      </div>
-                    </div>
-                    <ChevronRight className="text-black/20 group-hover:text-emerald-500 transition-colors" />
-                  </button>
-                ))}
-              </div>
+                <div className="relative mb-6 md:mb-8">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-black/30" size={20} />
+                  <input 
+                    type="text"
+                    placeholder="Ex: ABC-1234, João Silva..."
+                    className="w-full bg-white border border-black/5 rounded-2xl py-4 md:py-5 pl-12 md:pl-14 pr-4 md:pr-6 text-base md:text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
 
-              {selectedCustomer && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="mt-12 bg-white rounded-3xl border border-black/5 overflow-hidden shadow-xl"
-                >
-                  <div className="bg-emerald-600 p-6 md:p-8 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div>
-                      <div className="text-emerald-100 text-[10px] md:text-sm uppercase tracking-wider font-bold mb-1">Cliente Selecionado</div>
-                      <h3 className="text-2xl md:text-3xl font-bold">{selectedCustomer.name}</h3>
-                      <div className="flex flex-wrap gap-2 md:gap-4 mt-3 md:mt-4 text-emerald-50">
-                        <span className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full text-xs md:text-sm">
-                          <Phone size={12} /> {selectedCustomer.phone}
-                        </span>
-                        <span className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full text-xs md:text-sm">
-                          <Car size={12} /> {selectedCustomer.plate}
-                        </span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => setIsNewServiceModalOpen(true)}
-                      className="w-full md:w-auto bg-white text-emerald-600 px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors text-sm md:text-base"
+                <div className="grid gap-4">
+                  {searchResults.map((result) => (
+                    <button
+                      key={`${result.customer_id}-${result.vehicle_id}`}
+                      onClick={() => handleSelectCustomer(result)}
+                      className="w-full bg-white p-4 md:p-6 rounded-2xl border border-black/5 hover:border-emerald-500/50 transition-all flex items-center justify-between group text-left"
                     >
-                      <Plus size={18} /> Novo Serviço
-                    </button>
-                  </div>
-
-                  <div className="p-8">
-                    <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
-                      <History size={16} /> Histórico de Serviços
-                    </div>
-                    
-                    <div className="space-y-4">
-                      {history.length === 0 ? (
-                        <div className="text-center py-10 text-black/30 italic">
-                          Nenhum serviço registrado para este veículo.
+                      <div className="flex flex-col sm:flex-row gap-4 md:gap-6 sm:items-center">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                            <Car size={20} />
+                          </div>
+                          <div>
+                            <div className="font-bold text-base md:text-lg">{result.plate}</div>
+                            <div className="text-black/50 text-xs md:text-sm">{result.brand} {result.model}</div>
+                          </div>
                         </div>
-                      ) : (
-                        history.map((s) => (
-                          <div key={s.id} className="flex gap-6 p-4 rounded-xl hover:bg-black/[0.02] transition-colors border border-transparent hover:border-black/5">
-                            <div className="text-sm font-mono text-black/40 pt-1">
-                              {new Date(s.service_date).toLocaleDateString('pt-BR')}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-bold">{s.description}</div>
-                              <div className="text-sm text-black/50 mt-1">
-                                <button 
-                                  onClick={() => toggleServiceStatus(s.id, selectedCustomer.customer_id)}
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
-                                    s.status === 'completed' 
-                                      ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
-                                      : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                                  }`}
-                                >
-                                  {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
-                                  {s.status === 'completed' ? 'Concluído' : 'Pendente'}
-                                </button>
+                        <div className="hidden sm:block h-10 w-px bg-black/5" />
+                        <div>
+                          <div className="font-medium text-sm md:text-base">{result.name}</div>
+                          <div className="text-black/50 text-xs md:text-sm">{result.phone}</div>
+                        </div>
+                      </div>
+                      <ChevronRight className="text-black/20 group-hover:text-emerald-500 transition-colors" />
+                    </button>
+                  ))}
+                </div>
+
+                {selectedCustomer && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="mt-12 bg-white rounded-3xl border border-black/5 overflow-hidden shadow-xl"
+                  >
+                    <div className="bg-emerald-600 p-6 md:p-8 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                      <div>
+                        <div className="text-emerald-100 text-[10px] md:text-sm uppercase tracking-wider font-bold mb-1">Cliente Selecionado</div>
+                        <h3 className="text-2xl md:text-3xl font-bold">{selectedCustomer.name}</h3>
+                        <div className="flex flex-wrap gap-2 md:gap-4 mt-3 md:mt-4 text-emerald-50">
+                          <span className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full text-xs md:text-sm">
+                            <Phone size={12} /> {selectedCustomer.phone}
+                          </span>
+                          <span className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full text-xs md:text-sm">
+                            <Car size={12} /> {selectedCustomer.plate}
+                          </span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setIsNewServiceModalOpen(true)}
+                        className="w-full md:w-auto bg-white text-emerald-600 px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors text-sm md:text-base"
+                      >
+                        <Plus size={18} /> Novo Serviço
+                      </button>
+                    </div>
+
+                    <div className="p-8">
+                      <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
+                        <History size={16} /> Histórico de Serviços
+                      </div>
+                      
+                      <div className="space-y-4">
+                        {history.length === 0 ? (
+                          <div className="text-center py-10 text-black/30 italic">
+                            Nenhum serviço registrado para este veículo.
+                          </div>
+                        ) : (
+                          history.map((s) => (
+                            <div key={s.id} className="flex gap-6 p-4 rounded-xl hover:bg-black/[0.02] transition-colors border border-transparent hover:border-black/5">
+                              <div className="text-sm font-mono text-black/40 pt-1">
+                                {new Date(s.service_date).toLocaleDateString('pt-BR')}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-bold">{s.description}</div>
+                                <div className="text-sm text-black/50 mt-1">
+                                  <button 
+                                    onClick={() => toggleServiceStatus(s.id, selectedCustomer.customer_id)}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
+                                      s.status === 'completed' 
+                                        ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
+                                        : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                                    {s.status === 'completed' ? 'Concluído' : 'Pendente'}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="font-mono font-bold text-emerald-600">
+                                R$ {(s.total_price || 0).toFixed(2)}
                               </div>
                             </div>
-                            <div className="font-mono font-bold text-emerald-600">
-                              R$ {s.total_price.toFixed(2)}
-                            </div>
-                          </div>
-                        ))
-                      )}
+                          ))
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-          )}
+                  </motion.div>
+                )}
+              </div>
+            )}
 
-          {activeTab === 'payable' && (
-            <PayableTab 
-              onOpenModal={() => setIsNewPayableModalOpen(true)} 
-              onEdit={(p) => setEditingPayable(p)}
-              refreshTrigger={refreshPayablesKey}
-            />
-          )}
-          {activeTab === 'reports' && <ReportsTab />}
-          {activeTab === 'customers' && (
-            <CustomersTab 
-              refreshTrigger={refreshCustomersKey}
-              onOpenModal={() => setIsNewCustomerModalOpen(true)} 
-              onViewHistory={(c) => setViewingHistoryCustomer(c)}
-              onEdit={(c) => setEditingCustomer(c)}
-              onDelete={handleDeleteCustomer}
-            />
-          )}
-          {activeTab === 'services' && (
-            <ServicesTab 
-              onEdit={(id) => setEditingServiceId(id)}
-              refreshTrigger={refreshServicesKey}
-            />
-          )}
-        </div>
-      </main>
+            {activeTab === 'payable' && (
+              <PayableTab 
+                onOpenModal={() => setIsNewPayableModalOpen(true)} 
+                onEdit={(p) => setEditingPayable(p)}
+                refreshTrigger={refreshPayablesKey}
+                apiFetch={apiFetch}
+              />
+            )}
+            {activeTab === 'reports' && <ReportsTab apiFetch={apiFetch} />}
+            {activeTab === 'customers' && (
+              <CustomersTab 
+                refreshTrigger={refreshCustomersKey}
+                onOpenModal={() => setIsNewCustomerModalOpen(true)} 
+                onViewHistory={(c) => setViewingHistoryCustomer(c)}
+                onEdit={(c) => setEditingCustomer(c)}
+                onDelete={handleDeleteCustomer}
+                apiFetch={apiFetch}
+              />
+            )}
+            {activeTab === 'services' && (
+              <ServicesTab 
+                onEdit={(id) => setEditingServiceId(id)}
+                onNewService={() => setActiveTab('search')}
+                refreshTrigger={refreshServicesKey}
+                apiFetch={apiFetch}
+              />
+            )}
+          </div>
+        </main>
 
-      <NewCustomerModal 
-        isOpen={isNewCustomerModalOpen} 
-        onClose={() => setIsNewCustomerModalOpen(false)}
-        onSuccess={() => setActiveTab('search')}
-      />
+        <NewCustomerModal 
+          isOpen={isNewCustomerModalOpen} 
+          onClose={() => setIsNewCustomerModalOpen(false)}
+          onSuccess={(customerId, vehicleId) => {
+            if (vehicleId) {
+              // Fetch customer info to populate selectedCustomer
+              apiFetch(`/api/customers/${customerId}`).then(res => res.json()).then(customer => {
+                // We also need the vehicle info for the search result type
+                apiFetch(`/api/customers/${customerId}/vehicles`).then(res => res.json()).then(vehicles => {
+                  const vehicle = vehicles.find((v: any) => v.id === vehicleId);
+                  if (vehicle) {
+                    setSelectedCustomer({
+                      customer_id: customerId,
+                      name: customer.name,
+                      phone: customer.phone,
+                      vehicle_id: vehicleId,
+                      plate: vehicle.plate,
+                      brand: vehicle.brand,
+                      model: vehicle.model,
+                      year: vehicle.year,
+                      color: vehicle.color
+                    });
+                    setIsNewServiceModalOpen(true);
+                    setActiveTab('search');
+                  }
+                });
+              });
+            } else {
+              setRefreshCustomersKey(prev => prev + 1);
+              setActiveTab('customers');
+            }
+          }}
+          apiFetch={apiFetch}
+        />
 
-      <NewServiceModal 
-        isOpen={isNewServiceModalOpen} 
-        vehicleId={selectedCustomer?.vehicle_id || 0}
-        onClose={() => setIsNewServiceModalOpen(false)}
-        onSuccess={() => {
-          if (selectedCustomer) fetchHistory(selectedCustomer.customer_id);
-          setRefreshServicesKey(prev => prev + 1);
-        }}
-      />
+        <NewServiceModal 
+          isOpen={isNewServiceModalOpen} 
+          vehicleId={selectedCustomer?.vehicle_id || 0}
+          onClose={() => setIsNewServiceModalOpen(false)}
+          onSuccess={() => {
+            if (selectedCustomer) fetchHistory(selectedCustomer.customer_id);
+            setRefreshServicesKey(prev => prev + 1);
+          }}
+          apiFetch={apiFetch}
+        />
 
-      <NewPayableModal 
-        isOpen={isNewPayableModalOpen} 
-        onClose={() => setIsNewPayableModalOpen(false)}
-        onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
-      />
+        <NewPayableModal 
+          isOpen={isNewPayableModalOpen} 
+          onClose={() => setIsNewPayableModalOpen(false)}
+          onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
+          apiFetch={apiFetch}
+        />
 
-      <EditPayableModal 
-        isOpen={!!editingPayable}
-        payable={editingPayable}
-        onClose={() => setEditingPayable(null)}
-        onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
-      />
+        <EditPayableModal 
+          isOpen={!!editingPayable}
+          payable={editingPayable}
+          onClose={() => setEditingPayable(null)}
+          onSuccess={() => setRefreshPayablesKey(prev => prev + 1)}
+          onConfirmDelete={(payable) => {
+            setConfirmDialog({
+              isOpen: true,
+              title: 'Excluir Conta',
+              message: 'Tem certeza que deseja excluir esta conta?',
+              onConfirm: async () => {
+                try {
+                  const res = await apiFetch(`/api/accounts-payable/${payable.id}`, { method: 'DELETE' });
+                  if (res.ok) {
+                    setRefreshPayablesKey(prev => prev + 1);
+                    setEditingPayable(null);
+                  }
+                } catch (error) {
+                  console.error("Error deleting payable:", error);
+                }
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+              }
+            });
+          }}
+          apiFetch={apiFetch}
+        />
 
-      <EditServiceModal 
-        isOpen={!!editingServiceId}
-        serviceId={editingServiceId}
-        onClose={() => setEditingServiceId(null)}
-        onSuccess={() => setRefreshServicesKey(prev => prev + 1)}
-      />
+        <EditServiceModal 
+          isOpen={!!editingServiceId}
+          serviceId={editingServiceId}
+          onClose={() => setEditingServiceId(null)}
+          onSuccess={() => setRefreshServicesKey(prev => prev + 1)}
+          onConfirmDelete={(id) => {
+            setConfirmDialog({
+              isOpen: true,
+              title: 'Excluir OS',
+              message: 'Tem certeza que deseja excluir esta OS?',
+              onConfirm: async () => {
+                try {
+                  const res = await apiFetch(`/api/services/${id}`, { method: 'DELETE' });
+                  if (res.ok) {
+                    setRefreshServicesKey(prev => prev + 1);
+                    setEditingServiceId(null);
+                    if (selectedCustomer) fetchHistory(selectedCustomer.customer_id);
+                  }
+                } catch (error) {
+                  console.error("Error deleting service:", error);
+                }
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+              }
+            });
+          }}
+          apiFetch={apiFetch}
+        />
 
-      <CustomerHistoryModal 
-        isOpen={!!viewingHistoryCustomer}
-        customer={viewingHistoryCustomer}
-        onClose={() => setViewingHistoryCustomer(null)}
-      />
+        <CustomerHistoryModal 
+          isOpen={!!viewingHistoryCustomer}
+          customer={viewingHistoryCustomer}
+          onClose={() => setViewingHistoryCustomer(null)}
+          onNewService={(vehicleId) => {
+            setSelectedCustomer({
+              customer_id: viewingHistoryCustomer?.id || 0,
+              name: viewingHistoryCustomer?.name || '',
+              phone: viewingHistoryCustomer?.phone || '',
+              vehicle_id: vehicleId,
+              plate: '', brand: '', model: '', year: 0, color: ''
+            });
+            setIsNewServiceModalOpen(true);
+          }}
+          apiFetch={apiFetch}
+        />
 
-      <EditCustomerModal 
-        isOpen={!!editingCustomer}
-        customer={editingCustomer}
-        onClose={() => setEditingCustomer(null)}
-        onSuccess={() => {
-          setRefreshCustomersKey(prev => prev + 1);
-          setActiveTab('customers');
-        }}
-      />
+        <EditCustomerModal 
+          isOpen={!!editingCustomer}
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSuccess={() => {
+            setRefreshCustomersKey(prev => prev + 1);
+            setActiveTab('customers');
+          }}
+          onConfirmDeleteVehicle={(id) => {
+            setConfirmDialog({
+              isOpen: true,
+              title: 'Excluir Veículo',
+              message: 'Tem certeza que deseja excluir este veículo? Todos os serviços vinculados também serão excluídos.',
+              onConfirm: async () => {
+                try {
+                  const res = await apiFetch(`/api/vehicles/${id}`, { method: 'DELETE' });
+                  if (res.ok) {
+                    setRefreshCustomersKey(prev => prev + 1);
+                    setEditingCustomer(null);
+                  }
+                } catch (error) {
+                  console.error("Error deleting vehicle:", error);
+                }
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+              }
+            });
+          }}
+          apiFetch={apiFetch}
+        />
+
+        <ConfirmModal 
+          isOpen={confirmDialog.isOpen}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          onConfirm={confirmDialog.onConfirm}
+          onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        />
+      </>
     </div>
   );
 }
 
-function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, customer: Customer | null, onClose: () => void }) {
+function CustomerHistoryModal({ isOpen, customer, onClose, onNewService, apiFetch }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onNewService: (vehicleId: number) => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [history, setHistory] = useState<Service[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [showVehicleSelector, setShowVehicleSelector] = useState(false);
 
   const fetchHistory = async () => {
     if (!customer) return;
     try {
-      const res = await fetch(`/api/customers/${customer.id}/history`);
+      const res = await apiFetch(`/api/customers/${customer.id}/history`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setHistory(data);
@@ -395,8 +540,21 @@ function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, 
     }
   };
 
+  const fetchVehicles = async () => {
+    if (!customer) return;
+    try {
+      const res = await apiFetch(`/api/customers/${customer.id}/vehicles`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setVehicles(data);
+      }
+    } catch (error) {
+      console.error("Error fetching vehicles:", error);
+    }
+  };
+
   const toggleStatus = async (id: number) => {
-    const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
+    const res = await apiFetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
     if (res.ok) {
       fetchHistory();
     }
@@ -405,10 +563,20 @@ function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, 
   useEffect(() => {
     if (isOpen && customer) {
       fetchHistory();
+      fetchVehicles();
     }
   }, [isOpen, customer]);
 
   if (!isOpen || !customer) return null;
+
+  const handleNewServiceClick = () => {
+    if (vehicles.length === 1) {
+      onNewService(vehicles[0].id);
+      onClose();
+    } else {
+      setShowVehicleSelector(true);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -422,51 +590,99 @@ function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, 
             <h3 className="text-xl font-bold">{customer.name}</h3>
             <p className="text-emerald-100 text-sm">{customer.phone}</p>
           </div>
-          <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors">
-            <Plus className="rotate-45" size={24} />
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={handleNewServiceClick}
+              className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
+            >
+              <Plus size={18} /> Novo Serviço
+            </button>
+            <button onClick={onClose} className="hover:bg-white/10 p-2 rounded-lg transition-colors">
+              <Plus className="rotate-45" size={24} />
+            </button>
+          </div>
         </div>
         
         <div className="p-8 max-h-[60vh] overflow-y-auto">
-          <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
-            <History size={16} /> Histórico de Serviços
-          </div>
-          
-          <div className="space-y-4">
-            {history.length === 0 ? (
-              <div className="text-center py-10 text-black/30 italic">
-                Nenhum serviço registrado para este cliente.
+          {showVehicleSelector ? (
+            <div>
+              <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
+                <Car size={16} /> Selecione o Veículo
               </div>
-            ) : (
-              history.map((s) => (
-                <div key={s.id} className="flex gap-6 p-4 rounded-xl border border-black/5 items-center">
-                  <div className="text-sm font-mono text-black/40">
-                    {new Date(s.service_date).toLocaleDateString('pt-BR')}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-bold">{s.description}</div>
-                    <div className="text-xs text-black/40">{s.plate} • {s.model}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono font-bold text-emerald-600 mb-1">
-                      R$ {s.total_price.toFixed(2)}
+              <div className="grid gap-4">
+                {vehicles.map(v => (
+                  <button
+                    key={v.id}
+                    onClick={() => {
+                      onNewService(v.id);
+                      onClose();
+                      setShowVehicleSelector(false);
+                    }}
+                    className="w-full p-4 rounded-xl border border-black/5 hover:border-emerald-500/50 hover:bg-emerald-50 transition-all flex items-center justify-between group text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                        <Car size={20} />
+                      </div>
+                      <div>
+                        <div className="font-bold">{v.plate}</div>
+                        <div className="text-black/50 text-sm">{v.brand} {v.model}</div>
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => toggleStatus(s.id)}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
-                        s.status === 'completed' 
-                          ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
-                          : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                      }`}
-                    >
-                      {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
-                      {s.status === 'completed' ? 'Concluído' : 'Pendente'}
-                    </button>
+                    <ChevronRight className="text-black/20 group-hover:text-emerald-500 transition-colors" />
+                  </button>
+                ))}
+                <button 
+                  onClick={() => setShowVehicleSelector(false)}
+                  className="mt-4 text-black/40 font-bold text-sm hover:text-black transition-colors"
+                >
+                  Voltar ao Histórico
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-6 text-black/40 font-bold text-sm uppercase tracking-widest">
+                <History size={16} /> Histórico de Serviços
+              </div>
+              
+              <div className="space-y-4">
+                {history.length === 0 ? (
+                  <div className="text-center py-10 text-black/30 italic">
+                    Nenhum serviço registrado para este cliente.
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ) : (
+                  history.map((s) => (
+                    <div key={s.id} className="flex gap-6 p-4 rounded-xl border border-black/5 items-center">
+                      <div className="text-sm font-mono text-black/40">
+                        {new Date(s.service_date).toLocaleDateString('pt-BR')}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-bold">{s.description}</div>
+                        <div className="text-xs text-black/40">{s.plate} • {s.model}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-emerald-600 mb-1">
+                          R$ {s.total_price.toFixed(2)}
+                        </div>
+                        <button 
+                          onClick={() => toggleStatus(s.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
+                            s.status === 'completed' 
+                              ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' 
+                              : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                          }`}
+                        >
+                          {s.status === 'completed' ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                          {s.status === 'completed' ? 'Concluído' : 'Pendente'}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div className="p-6 bg-black/[0.02] border-t border-black/5 flex justify-end">
           <button 
@@ -481,7 +697,7 @@ function CustomerHistoryModal({ isOpen, customer, onClose }: { isOpen: boolean, 
   );
 }
 
-function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess }: { isOpen: boolean, vehicleId: number, onClose: () => void, onSuccess: () => void }) {
+function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess, apiFetch }: { isOpen: boolean, vehicleId: number, onClose: () => void, onSuccess: () => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     vehicle_id: vehicleId,
     description: '',
@@ -496,7 +712,7 @@ function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess }: { isOpen: bo
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/services', {
+      const res = await apiFetch('/api/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -573,7 +789,7 @@ function NewServiceModal({ isOpen, vehicleId, onClose, onSuccess }: { isOpen: bo
   );
 }
 
-function NewPayableModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
+function NewPayableModal({ isOpen, onClose, onSuccess, apiFetch }: { isOpen: boolean, onClose: () => void, onSuccess: () => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     supplier: '',
     description: '',
@@ -584,7 +800,7 @@ function NewPayableModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/accounts-payable', {
+      const res = await apiFetch('/api/accounts-payable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -680,7 +896,41 @@ function NewPayableModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onCl
   );
 }
 
-function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boolean, payable: AccountPayable | null, onClose: () => void, onSuccess: () => void }) {
+function ConfirmModal({ isOpen, title, message, onConfirm, onClose }: { isOpen: boolean, title: string, message: string, onConfirm: () => void, onClose: () => void }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden p-8 text-center"
+      >
+        <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+          <AlertCircle size={32} />
+        </div>
+        <h3 className="text-xl font-bold mb-2">{title}</h3>
+        <p className="text-black/50 mb-8">{message}</p>
+        <div className="flex gap-4">
+          <button 
+            onClick={onClose}
+            className="flex-1 px-6 py-3 border border-black/10 rounded-xl font-bold hover:bg-black/[0.02] transition-colors"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={onConfirm}
+            className="flex-1 px-6 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors"
+          >
+            Excluir
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function EditPayableModal({ isOpen, payable, onClose, onSuccess, onConfirmDelete, apiFetch }: { isOpen: boolean, payable: AccountPayable | null, onClose: () => void, onSuccess: () => void, onConfirmDelete: (payable: AccountPayable) => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     supplier: '',
     description: '',
@@ -704,8 +954,9 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boo
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!payable) return;
+
     try {
-      const res = await fetch(`/api/accounts-payable/${payable.id}`, {
+      const res = await apiFetch(`/api/accounts-payable/${payable.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -716,21 +967,6 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boo
       }
     } catch (error) {
       console.error("Error updating payable:", error);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!payable) return;
-    if (confirm('Tem certeza que deseja excluir esta conta?')) {
-      try {
-        const res = await fetch(`/api/accounts-payable/${payable.id}`, { method: 'DELETE' });
-        if (res.ok) {
-          onSuccess();
-          onClose();
-        }
-      } catch (error) {
-        console.error("Error deleting payable:", error);
-      }
     }
   };
 
@@ -785,7 +1021,7 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boo
             <div>
               <label className="block text-sm font-medium mb-1">Vencimento</label>
               <input 
-                type="date"
+                type="date" 
                 required
                 className="w-full border border-black/10 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500/20 outline-none"
                 value={formData.due_date}
@@ -808,7 +1044,7 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boo
           <div className="flex justify-between gap-4 mt-6">
             <button 
               type="button"
-              onClick={handleDelete}
+              onClick={() => onConfirmDelete(payable)}
               className="px-6 py-2 text-red-500 font-bold hover:text-red-700 transition-colors flex items-center gap-2"
             >
               <Trash2 size={18} /> Excluir
@@ -835,7 +1071,7 @@ function EditPayableModal({ isOpen, payable, onClose, onSuccess }: { isOpen: boo
   );
 }
 
-function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: boolean, serviceId: number | null, onClose: () => void, onSuccess: () => void }) {
+function EditServiceModal({ isOpen, serviceId, onClose, onSuccess, onConfirmDelete, apiFetch }: { isOpen: boolean, serviceId: number | null, onClose: () => void, onSuccess: () => void, onConfirmDelete: (id: number) => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     description: '',
     total_price: 0,
@@ -852,7 +1088,7 @@ function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: b
   const fetchService = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/services/${serviceId}`);
+      const res = await apiFetch(`/api/services/${serviceId}`);
       const data = await res.json();
       setFormData({
         description: data.description,
@@ -869,7 +1105,7 @@ function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: b
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!serviceId) return;
-    const res = await fetch(`/api/services/${serviceId}`, {
+    const res = await apiFetch(`/api/services/${serviceId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
@@ -877,17 +1113,6 @@ function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: b
     if (res.ok) {
       onSuccess();
       onClose();
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!serviceId) return;
-    if (confirm('Tem certeza que deseja excluir esta OS?')) {
-      const res = await fetch(`/api/services/${serviceId}`, { method: 'DELETE' });
-      if (res.ok) {
-        onSuccess();
-        onClose();
-      }
     }
   };
 
@@ -937,7 +1162,7 @@ function EditServiceModal({ isOpen, serviceId, onClose, onSuccess }: { isOpen: b
             <div className="flex justify-between gap-4 mt-6">
               <button 
                 type="button"
-                onClick={handleDelete}
+                onClick={() => onConfirmDelete(serviceId)}
                 className="px-6 py-2 text-red-500 font-bold hover:text-red-700 transition-colors flex items-center gap-2"
               >
                 <Trash2 size={18} /> Excluir
@@ -981,14 +1206,14 @@ function NavButton({ active, onClick, icon, label, className = "" }: { active: b
   );
 }
 
-function PayableTab({ onOpenModal, onEdit, refreshTrigger }: { onOpenModal: () => void, onEdit: (p: AccountPayable) => void, refreshTrigger?: number }) {
+function PayableTab({ onOpenModal, onEdit, refreshTrigger, apiFetch }: { onOpenModal: () => void, onEdit: (p: AccountPayable) => void, refreshTrigger?: number, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [payables, setPayables] = useState<AccountPayable[]>([]);
   const [filter, setFilter] = useState({ start: '', end: '', supplier: '' });
 
   const fetchPayables = async () => {
     try {
       const params = new URLSearchParams(filter);
-      const res = await fetch(`/api/accounts-payable?${params}`);
+      const res = await apiFetch(`/api/accounts-payable?${params}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setPayables(data);
@@ -1002,7 +1227,7 @@ function PayableTab({ onOpenModal, onEdit, refreshTrigger }: { onOpenModal: () =
   };
 
   const togglePaid = async (id: number) => {
-    const res = await fetch(`/api/accounts-payable/${id}/toggle-paid`, { method: 'PATCH' });
+    const res = await apiFetch(`/api/accounts-payable/${id}/toggle-paid`, { method: 'PATCH' });
     if (res.ok) {
       fetchPayables();
     }
@@ -1089,7 +1314,7 @@ function PayableTab({ onOpenModal, onEdit, refreshTrigger }: { onOpenModal: () =
                 <td className="px-4 md:px-6 py-4 font-mono text-sm">{new Date(p.due_date).toLocaleDateString('pt-BR')}</td>
                 <td className="px-4 md:px-6 py-4 font-bold text-sm md:text-base">{p.supplier}</td>
                 <td className="hidden md:table-cell px-6 py-4 text-black/50 text-sm">{p.description}</td>
-                <td className="px-4 md:px-6 py-4 text-right font-mono font-bold text-sm md:text-base">R$ {p.amount.toFixed(2)}</td>
+                <td className="px-4 md:px-6 py-4 text-right font-mono font-bold text-sm md:text-base">R$ {(p.amount || 0).toFixed(2)}</td>
                 <td className="px-4 md:px-6 py-4 text-center">
                   <button 
                     onClick={() => togglePaid(p.id)}
@@ -1124,13 +1349,14 @@ function PayableTab({ onOpenModal, onEdit, refreshTrigger }: { onOpenModal: () =
   );
 }
 
-function ReportsTab() {
+function ReportsTab({ apiFetch }: { apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [reportData, setReportData] = useState<Service[]>([]);
   const [range, setRange] = useState({ start: '', end: '' });
 
   const fetchReport = async () => {
+    if (!range.start || !range.end) return;
     try {
-      const res = await fetch(`/api/reports/services?start=${range.start}&end=${range.end}`);
+      const res = await apiFetch(`/api/reports/services?start=${range.start}&end=${range.end}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setReportData(data);
@@ -1214,13 +1440,13 @@ function ReportsTab() {
         <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-black/5 shadow-sm">
           <div className="text-black/40 text-[10px] md:text-xs font-bold uppercase tracking-widest mb-1 md:mb-2">Faturamento Total</div>
           <div className="text-2xl md:text-4xl font-bold text-emerald-600">
-            R$ {reportData.reduce((acc, s) => acc + s.total_price, 0).toFixed(2)}
+            R$ {reportData.reduce((acc, s) => acc + (s.total_price || 0), 0).toFixed(2)}
           </div>
         </div>
         <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-black/5 shadow-sm">
           <div className="text-black/40 text-[10px] md:text-xs font-bold uppercase tracking-widest mb-1 md:mb-2">Ticket Médio</div>
           <div className="text-2xl md:text-4xl font-bold">
-            R$ {reportData.length ? (reportData.reduce((acc, s) => acc + s.total_price, 0) / reportData.length).toFixed(2) : '0.00'}
+            R$ {reportData.length ? (reportData.reduce((acc, s) => acc + (s.total_price || 0), 0) / reportData.length).toFixed(2) : '0.00'}
           </div>
         </div>
       </div>
@@ -1233,7 +1459,7 @@ function ReportsTab() {
               onClick={() => {
                 const today = new Date().toISOString().split('T')[0];
                 setRange({ start: today, end: today });
-                fetch(`/api/reports/services?start=${today}&end=${today}`)
+                apiFetch(`/api/reports/services?start=${today}&end=${today}`)
                   .then(res => res.json())
                   .then(data => {
                     if (Array.isArray(data)) {
@@ -1305,14 +1531,14 @@ function ReportsTab() {
   );
 }
 
-function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTrigger }: { onOpenModal: () => void, onViewHistory: (c: Customer) => void, onEdit: (c: Customer) => void, onDelete: (id: number) => void, refreshTrigger?: number }) {
+function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTrigger, apiFetch }: { onOpenModal: () => void, onViewHistory: (c: Customer) => void, onEdit: (c: Customer) => void, onDelete: (id: number) => void, refreshTrigger?: number, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchCustomers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/customers');
+      const res = await apiFetch('/api/customers');
       const data = await res.json();
       if (Array.isArray(data)) {
         setCustomers(data);
@@ -1393,6 +1619,12 @@ function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTri
                         onClick={() => onViewHistory(c)}
                         className="text-emerald-600 hover:text-emerald-700 font-bold text-xs md:text-sm flex items-center gap-1"
                       >
+                        <Plus size={14} /> <span className="hidden sm:inline">Novo Serviço</span>
+                      </button>
+                      <button 
+                        onClick={() => onViewHistory(c)}
+                        className="text-black/40 hover:text-black font-bold text-xs md:text-sm flex items-center gap-1"
+                      >
                         <History size={14} /> <span className="hidden sm:inline">Histórico</span>
                       </button>
                       <button 
@@ -1419,7 +1651,7 @@ function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTri
   );
 }
 
-function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onClose: () => void, onSuccess: () => void }) {
+function NewCustomerModal({ isOpen, onClose, onSuccess, apiFetch }: { isOpen: boolean, onClose: () => void, onSuccess: (customerId: number, vehicleId?: number | null) => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -1432,17 +1664,20 @@ function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onC
       color: ''
     }
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent, startService: boolean = false) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
-      const res = await fetch('/api/customers', {
+      const res = await apiFetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
+      const data = await res.json();
       if (res.ok) {
-        onSuccess();
+        onSuccess(data.id, startService ? data.vehicle_id : null);
         onClose();
         setFormData({
           name: '', phone: '', email: '',
@@ -1451,6 +1686,8 @@ function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onC
       }
     } catch (error) {
       console.error("Error creating customer:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1470,7 +1707,7 @@ function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onC
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-8 grid grid-cols-2 gap-6">
+        <form onSubmit={(e) => handleSubmit(e)} className="p-8 grid grid-cols-2 gap-6">
           <div className="col-span-2">
             <h4 className="text-xs font-bold text-black/30 uppercase tracking-widest mb-4">Dados do Cliente</h4>
             <div className="grid grid-cols-2 gap-4">
@@ -1554,17 +1791,26 @@ function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onC
             </div>
           </div>
 
-          <div className="col-span-2 flex justify-end gap-4 mt-6">
+          <div className="col-span-2 flex flex-col sm:flex-row justify-end gap-3 mt-6">
             <button 
               type="button"
               onClick={onClose}
-              className="px-6 py-2 text-black/50 font-bold hover:text-black transition-colors"
+              className="px-6 py-2 text-black/50 font-bold hover:text-black transition-colors order-3 sm:order-1"
             >
               Cancelar
             </button>
             <button 
+              type="button"
+              disabled={isSubmitting}
+              onClick={(e) => handleSubmit(e as any, true)}
+              className="bg-black text-white px-6 py-2 rounded-xl font-bold hover:bg-black/80 transition-colors flex items-center justify-center gap-2 order-1 sm:order-2 disabled:opacity-50"
+            >
+              <Wrench size={18} /> Salvar e Iniciar Serviço
+            </button>
+            <button 
               type="submit"
-              className="bg-emerald-600 text-white px-8 py-2 rounded-xl font-bold hover:bg-emerald-700 transition-colors"
+              disabled={isSubmitting}
+              className="bg-emerald-600 text-white px-8 py-2 rounded-xl font-bold hover:bg-emerald-700 transition-colors order-2 sm:order-3 disabled:opacity-50"
             >
               Salvar Cadastro
             </button>
@@ -1575,7 +1821,7 @@ function NewCustomerModal({ isOpen, onClose, onSuccess }: { isOpen: boolean, onC
   );
 }
 
-function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void, refreshTrigger?: number }) {
+function ServicesTab({ onEdit, onNewService, refreshTrigger, apiFetch }: { onEdit: (id: number) => void, onNewService: () => void, refreshTrigger?: number, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState({ start: '', end: '' });
@@ -1584,7 +1830,7 @@ function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void,
     setIsLoading(true);
     try {
       const params = new URLSearchParams(filter);
-      const res = await fetch(`/api/services?${params}`);
+      const res = await apiFetch(`/api/services?${params}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setServices(data);
@@ -1601,7 +1847,7 @@ function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void,
 
   const toggleStatus = async (id: number) => {
     try {
-      const res = await fetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
+      const res = await apiFetch(`/api/services/${id}/toggle-status`, { method: 'PATCH' });
       if (res.ok) {
         fetchServices();
       }
@@ -1625,12 +1871,20 @@ function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void,
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-1 md:mb-2">Ordens de Serviço</h2>
           <p className="text-sm md:text-base text-black/50">Acompanhe todos os serviços realizados e em andamento.</p>
         </div>
-        <button 
-          onClick={fetchServices}
-          className="w-full md:w-auto bg-black text-white px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-colors text-sm md:text-base"
-        >
-          <History size={18} /> Atualizar Lista
-        </button>
+        <div className="flex gap-2 md:gap-4 w-full md:w-auto">
+          <button 
+            onClick={fetchServices}
+            className="flex-1 md:flex-none bg-black text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-colors text-sm md:text-base"
+          >
+            <History size={18} /> <span className="hidden sm:inline">Atualizar Lista</span><span className="sm:hidden">Atualizar</span>
+          </button>
+          <button 
+            onClick={onNewService}
+            className="flex-1 md:flex-none bg-emerald-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20 text-sm md:text-base"
+          >
+            <Plus size={18} /> <span className="hidden sm:inline">Novo Serviço</span><span className="sm:hidden">Novo</span>
+          </button>
+        </div>
       </header>
 
       <div className="bg-white p-4 md:p-6 rounded-2xl border border-black/5 mb-6 md:mb-8 flex flex-col sm:flex-row gap-4 items-start sm:items-end">
@@ -1690,7 +1944,7 @@ function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void,
                   <td className="px-4 md:px-6 py-4 font-bold text-sm md:text-base">{s.customer_name}</td>
                   <td className="hidden lg:table-cell px-6 py-4 text-sm">{s.plate} • {s.model}</td>
                   <td className="hidden md:table-cell px-6 py-4 text-black/50 text-sm">{s.description}</td>
-                  <td className="px-4 md:px-6 py-4 text-right font-mono font-bold text-sm md:text-base">R$ {s.total_price.toFixed(2)}</td>
+                  <td className="px-4 md:px-6 py-4 text-right font-mono font-bold text-sm md:text-base">R$ {(s.total_price || 0).toFixed(2)}</td>
                   <td className="px-4 md:px-6 py-4 text-center">
                     <button 
                       onClick={() => toggleStatus(s.id)}
@@ -1731,7 +1985,7 @@ function ServicesTab({ onEdit, refreshTrigger }: { onEdit: (id: number) => void,
   );
 }
 
-function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onSuccess: () => void }) {
+function EditCustomerModal({ isOpen, customer, onClose, onSuccess, onConfirmDeleteVehicle, apiFetch }: { isOpen: boolean, customer: Customer | null, onClose: () => void, onSuccess: () => void, onConfirmDeleteVehicle: (id: number) => void, apiFetch: (url: string, options?: RequestInit) => Promise<Response> }) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -1751,7 +2005,7 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: b
   const fetchVehicles = async () => {
     if (!customer) return;
     try {
-      const res = await fetch(`/api/customers/${customer.id}/vehicles`);
+      const res = await apiFetch(`/api/customers/${customer.id}/vehicles`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setVehicles(data);
@@ -1778,7 +2032,7 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: b
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!customer) return;
-    const res = await fetch(`/api/customers/${customer.id}`, {
+    const res = await apiFetch(`/api/customers/${customer.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
@@ -1797,7 +2051,7 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: b
     const url = editingVehicle ? `/api/vehicles/${editingVehicle.id}` : '/api/vehicles';
     const body = editingVehicle ? vehicleForm : { ...vehicleForm, customer_id: customer.id };
 
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -1808,15 +2062,6 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: b
       setIsAddingVehicle(false);
       setEditingVehicle(null);
       setVehicleForm({ plate: '', brand: '', model: '', year: '', color: '' });
-    }
-  };
-
-  const handleDeleteVehicle = async (id: number) => {
-    if (confirm('Tem certeza que deseja excluir este veículo? Todos os serviços vinculados também serão excluídos.')) {
-      const res = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchVehicles();
-      }
     }
   };
 
@@ -2001,7 +2246,7 @@ function EditCustomerModal({ isOpen, customer, onClose, onSuccess }: { isOpen: b
                         <Edit size={16} />
                       </button>
                       <button 
-                        onClick={() => handleDeleteVehicle(v.id)}
+                        onClick={() => onConfirmDeleteVehicle(v.id)}
                         className="p-2 text-red-400 hover:text-red-600 transition-colors"
                       >
                         <Trash2 size={16} />
