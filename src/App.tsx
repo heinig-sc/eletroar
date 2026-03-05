@@ -68,7 +68,7 @@ export default function App() {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (searchQuery.length > 1) {
-        apiFetch(`/api/search?q=${searchQuery}`)
+        apiFetch(`/api/search?q=${encodeURIComponent(searchQuery)}`)
           .then(res => res.json())
           .then(data => {
             if (Array.isArray(data)) {
@@ -1356,8 +1356,10 @@ function ReportsTab({ apiFetch }: { apiFetch: (url: string, options?: RequestIni
   const fetchReport = async () => {
     if (!range.start || !range.end) return;
     try {
+      console.log("Fetching report for range:", range);
       const res = await apiFetch(`/api/reports/services?start=${range.start}&end=${range.end}`);
       const data = await res.json();
+      console.log("Report data received:", data);
       if (Array.isArray(data)) {
         setReportData(data);
       } else {
@@ -1385,7 +1387,7 @@ function ReportsTab({ apiFetch }: { apiFetch: (url: string, options?: RequestIni
     doc.text(periodText, 14, 30);
     
     // Stats
-    const totalRevenue = reportData.reduce((acc, s) => acc + s.total_price, 0);
+    const totalRevenue = reportData.reduce((acc, s) => acc + (s.total_price || 0), 0);
     doc.setFontSize(12);
     doc.setTextColor(0);
     doc.text(`Total de Serviços: ${reportData.length}`, 14, 40);
@@ -1397,7 +1399,7 @@ function ReportsTab({ apiFetch }: { apiFetch: (url: string, options?: RequestIni
       s.customer_name,
       s.plate,
       s.description,
-      `R$ ${s.total_price.toFixed(2)}`
+      `R$ ${Number(s.total_price || 0).toFixed(2)}`
     ]);
 
     autoTable(doc, {
@@ -1829,8 +1831,11 @@ function ServicesTab({ onEdit, onNewService, refreshTrigger, apiFetch }: { onEdi
   const fetchServices = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams(filter);
-      const res = await apiFetch(`/api/services?${params}`);
+      const params = new URLSearchParams();
+      if (filter.start) params.append('start', filter.start);
+      if (filter.end) params.append('end', filter.end);
+      
+      const res = await apiFetch(`/api/services?${params.toString()}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setServices(data);
@@ -1874,9 +1879,12 @@ function ServicesTab({ onEdit, onNewService, refreshTrigger, apiFetch }: { onEdi
         <div className="flex gap-2 md:gap-4 w-full md:w-auto">
           <button 
             onClick={fetchServices}
-            className="flex-1 md:flex-none bg-black text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-colors text-sm md:text-base"
+            disabled={isLoading}
+            className={`flex-1 md:flex-none bg-black text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-black/80 transition-colors text-sm md:text-base ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <History size={18} /> <span className="hidden sm:inline">Atualizar Lista</span><span className="sm:hidden">Atualizar</span>
+            <History size={18} className={isLoading ? 'animate-spin' : ''} /> 
+            <span className="hidden sm:inline">{isLoading ? 'Atualizando...' : 'Atualizar Lista'}</span>
+            <span className="sm:hidden">{isLoading ? '...' : 'Atualizar'}</span>
           </button>
           <button 
             onClick={onNewService}

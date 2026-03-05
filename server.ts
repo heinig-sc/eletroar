@@ -22,32 +22,95 @@ async function startServer() {
   
   // Search Customers/Vehicles
   app.get("/api/search", async (req, res) => {
-    const { q } = req.query;
-    const searchTerm = `%${q}%`;
+    const q = req.query.q as string;
+    if (!q || q.trim().length === 0) return res.json([]);
+    const searchTerm = `%${q.trim()}%`;
     
-    const { data, error } = await supabase
-      .from('customers')
-      .select(`
-        customer_id:id, name, phone,
-        vehicles (
-          vehicle_id:id, plate, brand, model, year, color
-        )
-      `)
-      .or(`name.ilike.${searchTerm},phone.ilike.${searchTerm},vehicles.plate.ilike.${searchTerm},vehicles.brand.ilike.${searchTerm},vehicles.model.ilike.${searchTerm}`);
-    
-    if (error) return res.status(500).json({ error: error.message });
-    
-    // Flatten results to match previous format
-    const results = data.flatMap((customer: any) => 
-      customer.vehicles.map((vehicle: any) => ({
-        customer_id: customer.customer_id,
-        name: customer.name,
-        phone: customer.phone,
-        ...vehicle
-      }))
-    );
-    
-    res.json(results);
+    try {
+      // 1. Search by customer name or phone
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select(`
+          id, name, phone,
+          vehicles (
+            id, plate, brand, model, year, color
+          )
+        `)
+        .or(`name.ilike.${searchTerm},phone.ilike.${searchTerm}`);
+
+      if (customersError) throw customersError;
+
+      // 2. Search by vehicle plate, brand or model
+      const { data: vehiclesData, error: vehiclesError } = await supabase
+        .from('vehicles')
+        .select(`
+          id, plate, brand, model, year, color,
+          customers (
+            id, name, phone
+          )
+        `)
+        .or(`plate.ilike.${searchTerm},brand.ilike.${searchTerm},model.ilike.${searchTerm}`);
+
+      if (vehiclesError) throw vehiclesError;
+
+      const resultsMap = new Map();
+
+      // Process customer matches
+      customersData?.forEach((customer: any) => {
+        if (!customer.vehicles || customer.vehicles.length === 0) {
+          const key = `c-${customer.id}`;
+          resultsMap.set(key, {
+            customer_id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            vehicle_id: null,
+            plate: 'Sem Veículo',
+            brand: '-',
+            model: '-',
+            year: null,
+            color: '-'
+          });
+        } else {
+          customer.vehicles.forEach((v: any) => {
+            const key = `v-${v.id}`;
+            resultsMap.set(key, {
+              customer_id: customer.id,
+              name: customer.name,
+              phone: customer.phone,
+              vehicle_id: v.id,
+              plate: v.plate,
+              brand: v.brand,
+              model: v.model,
+              year: v.year,
+              color: v.color
+            });
+          });
+        }
+      });
+
+      // Process vehicle matches (might overlap, Map handles deduplication by key)
+      vehiclesData?.forEach((v: any) => {
+        const key = `v-${v.id}`;
+        if (!resultsMap.has(key)) {
+          resultsMap.set(key, {
+            customer_id: v.customers.id,
+            name: v.customers.name,
+            phone: v.customers.phone,
+            vehicle_id: v.id,
+            plate: v.plate,
+            brand: v.brand,
+            model: v.model,
+            year: v.year,
+            color: v.color
+          });
+        }
+      });
+
+      res.json(Array.from(resultsMap.values()));
+    } catch (error: any) {
+      console.error("Search error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // List all customers
@@ -84,7 +147,7 @@ async function startServer() {
       `);
 
     if (start) query = query.gte('service_date', start);
-    if (end) query = query.lte('service_date', end);
+    if (end) query = query.lte('service_date', `${end}T23:59:59`);
 
     const { data, error } = await query.order('service_date', { ascending: false });
     
@@ -92,9 +155,9 @@ async function startServer() {
     
     const results = data.map(s => ({
       ...s,
-      customer_name: s.vehicles.customers.name,
-      plate: s.vehicles.plate,
-      model: s.vehicles.model
+      customer_name: s.vehicles?.customers?.name || 'N/A',
+      plate: s.vehicles?.plate || 'N/A',
+      model: s.vehicles?.model || 'N/A'
     }));
     
     res.json(results);
@@ -421,7 +484,8 @@ async function startServer() {
   // Reports
   app.get("/api/reports/services", async (req, res) => {
     const { start, end } = req.query;
-    const { data, error } = await supabase
+    
+    let query = supabase
       .from('services')
       .select(`
         *,
@@ -429,16 +493,20 @@ async function startServer() {
           plate,
           customers (name)
         )
-      `)
-      .gte('service_date', start || '1970-01-01')
-      .lte('service_date', end || '2099-12-31');
+      `);
+
+    if (start) query = query.gte('service_date', start);
+    if (end) query = query.lte('service_date', `${end}T23:59:59`);
+      
+    const { data, error } = await query.order('service_date', { ascending: false });
       
     if (error) return res.status(500).json({ error: error.message });
     
     const results = data.map(s => ({
       ...s,
-      customer_name: s.vehicles.customers.name,
-      plate: s.vehicles.plate
+      total_price: Number(s.total_price || 0),
+      customer_name: s.vehicles?.customers?.name || 'N/A',
+      plate: s.vehicles?.plate || 'N/A'
     }));
     
     res.json(results);
