@@ -45,6 +45,11 @@ export interface AccountPayable {
   paid: boolean;
 }
 
+export interface User {
+  id: number;
+  username: string;
+}
+
 export interface SearchResult {
   customer_id: number;
   name: string;

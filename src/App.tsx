@@ -26,11 +26,15 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { SearchResult, Service, AccountPayable, Customer, Vehicle } from './types';
+import { SearchResult, Service, AccountPayable, Customer, Vehicle, User as UserType } from './types';
+import LoginPage from './components/LoginPage';
+import { LogOut } from 'lucide-react';
 
 type Tab = 'search' | 'customers' | 'services' | 'payable' | 'reports';
 
 export default function App() {
+  const [user, setUser] = useState<UserType | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -59,10 +63,80 @@ export default function App() {
   });
 
   const apiFetch = async (url: string, options: RequestInit = {}) => {
-    return fetch(url, {
-      ...options,
-    });
+    try {
+      const token = localStorage.getItem('eletroar_token');
+      const headers = {
+        ...options.headers,
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
+
+      const res = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+      if (res.status === 401) {
+        if (user) {
+          localStorage.removeItem('eletroar_token');
+          setUser(null);
+        }
+      }
+      return res;
+    } catch (err: any) {
+      console.error(`Fetch error for ${url}:`, err);
+      throw new Error(`Erro de conexão ao acessar ${url}: ${err.message}`);
+    }
   };
+
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('eletroar_token');
+      const headers: any = { 'Accept': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/auth/me', { 
+        credentials: 'include',
+        headers
+      });
+      const data = await res.json();
+      if (data.authenticated) {
+        setUser(data.user);
+      } else {
+        localStorage.removeItem('eletroar_token');
+      }
+    } catch (err) {
+      console.error("Auth check failed", err);
+    } finally {
+      setIsAuthChecking(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const token = localStorage.getItem('eletroar_token');
+      const headers: any = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      await fetch('/api/auth/logout', { 
+        method: 'POST', 
+        credentials: 'include',
+        headers
+      });
+      localStorage.removeItem('eletroar_token');
+      setUser(null);
+    } catch (err) {
+      console.error("Logout failed", err);
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+    
+    // Check if cookies are enabled
+    if (!navigator.cookieEnabled) {
+      console.error("Cookies are disabled in this browser.");
+    }
+  }, []);
 
   // Search logic
   useEffect(() => {
@@ -142,6 +216,23 @@ export default function App() {
     });
   };
 
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white animate-pulse">
+            <Wrench size={24} />
+          </div>
+          <p className="text-sm font-bold text-black/40 animate-pulse">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage onLogin={(u) => setUser(u)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A] font-sans pb-20 md:pb-0">
       <AnimatePresence>
@@ -156,6 +247,12 @@ export default function App() {
             </div>
             <h1 className="font-bold text-lg tracking-tight">EletroAr</h1>
           </div>
+          <button 
+            onClick={handleLogout}
+            className="p-2 text-black/40 hover:text-red-600 transition-colors"
+          >
+            Sair
+          </button>
         </header>
 
         {/* Sidebar / Bottom Nav */}
@@ -198,6 +295,24 @@ export default function App() {
               icon={<FileText size={20} />}
               label="Relatórios"
             />
+            
+            <div className="hidden md:block mt-auto pt-6 border-t border-black/5">
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold text-sm"
+              >
+                <LogOut size={20} />
+                Sair
+              </button>
+            </div>
+            
+            <button 
+              onClick={handleLogout}
+              className="md:hidden flex flex-col items-center justify-center gap-1 px-2 py-1 text-red-500"
+            >
+              <LogOut size={20} />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Sair</span>
+            </button>
           </div>
         </nav>
 
@@ -1541,14 +1656,19 @@ function CustomersTab({ onOpenModal, onViewHistory, onEdit, onDelete, refreshTri
     setIsLoading(true);
     try {
       const res = await apiFetch('/api/customers');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro do servidor: ${res.status}`);
+      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setCustomers(data);
       } else {
         setCustomers([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching customers:", error);
+      // You might want to show a toast or alert here
       setCustomers([]);
     } finally {
       setIsLoading(false);
