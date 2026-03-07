@@ -33,10 +33,9 @@ try {
   console.error("Failed to initialize Supabase client:", err);
 }
 
-async function startServer() {
-  try {
-    const app = express();
-    const PORT = 3000;
+export async function createServer() {
+  const app = express();
+  const PORT = 3000;
 
   app.set("trust proxy", true);
   app.use(express.json());
@@ -736,30 +735,31 @@ async function startServer() {
     res.status(500).json({ error: "Internal Server Error", message: err.message });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development (skip in Vercel API)
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
+    // Only serve static files if NOT on Vercel (Vercel handles static itself)
     app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (req, res) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
   }
 
-  console.log("Starting Express server on port", PORT);
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-  } catch (err) {
-    console.error("Error during server startup:", err);
-    throw err;
-  }
+  return app;
 }
 
-startServer().catch(err => {
-  console.error("Failed to start server:", err);
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  createServer().then(app => {
+    const PORT = Number(process.env.PORT) || 3000;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }).catch(err => {
+    console.error("Failed to start server:", err);
+  });
+}
